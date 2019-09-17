@@ -1,95 +1,39 @@
 const _ = require("lodash");
-const express = require('express');
-const app = express();
-
-const server = require('http').createServer(app);
-const io = require('socket.io')(server);
-
-app.use('/', express.static(__dirname + '/public'));
+const Helper = require("./helpers/Helper");
+const game = require("./game/game");
+const { setupServer } = require("./game/server");
 console.log("start server...");
 
-const getUid = () => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-};
-
-const getRoomId = () => {
-    const id = getUid();
-    return id.substr(0,6);
-}
-
-const roomInfo = {};
-
-//可用的房间
-const getRoom = () => {
-    for (let key in roomInfo) {
-        if (roomInfo[key].length < 2) return key;
-    }
-
-    console.log("新建房间");
-    const roomId = getRoomId();
-    roomInfo[roomId] = [];
-    return roomId;
-}
 //socket部分
-io.on('connection', (socket) => {
-    let roomId = "";
-    let user = {};
-    socket.on('createRoom', (data) => {
-        //有房间直接进入，否则创建房间
-        console.log(data);
-        
-        if(roomId != ""){
-            socket.emit('disconnect');
+const ws = require('nodejs-websocket')
+
+const server = ws.createServer(connection => {
+    connection.on('text', function (json) {
+        console.log('收到消息', json);
+        const msg = JSON.parse(json);
+        const { msgId, data } = msg;
+        if (msgId == 'enterRoom') {
+            connection.playerId = data.playerId;
+            game.enterRoom(data);
+        } else if (msgId == 'moveTo') {
+            game.moveTo(data);
+        } else if (msgId == 'takeItem') {
+            game.takeItem(data);
         }
-        user = data;
-        roomId = getRoom();
-        roomInfo[roomId].push(user);
-
-        console.log("房间:" + roomId + "==>" + JSON.stringify(roomInfo[roomId]));
-        socket.emit('createRoomSuccess', roomInfo[roomId]);
-
-        socket.join(roomId);
-        // setTimeout(()=>{
-        //     socket.emit("enterRoom","进入房间");
-        // },3000);
     })
-
-    // 接收用户消息,发送相应的房间
-    socket.on('message', (msg)=> {
-        // 验证如果用户不在房间内则不给发送
-        if (roomInfo[roomId].indexOf(user) === -1) {
-            console.log("用戶不在房間");
-            return false;
-        }
-        //console.log("發送消息==>"+msg);
-        io.to(roomId).emit('msg', {fromPlayer:user,msg:msg});
-    });
-
-
-    socket.on('leave', ()=> {
-        socket.emit('disconnect');
-    });
-
-    //断开事件
-    socket.on('disconnect', (data) => {
-        if(roomId == '')return;
-        var index = roomInfo[roomId].indexOf(user);
-        if (index !== -1) {
-            roomInfo[roomId].splice(index, 1);
-        }
-
-        socket.leave(roomId);    // 退出房间
-        io.to(roomId).emit('sys', user.name + '退出了房间', roomInfo[roomId]);
-        console.log(user.name + '退出了' + roomId);
-        roomId = "";
+    connection.on('close', function (code, reason) {
+        console.log('关闭连接', code, reason)
+        game.leaveRoom(connection.playerId);
     })
-
-});
-
-
-
+    connection.on('error', function (code) {
+        try {
+            connection.close()
+        } catch (error) {
+            console.log('close异常', error)
+        }
+        console.log('异常关闭', code)
+    })
+})
 
 server.listen(3000);
+setupServer(server);

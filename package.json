@@ -12,6 +12,7 @@
   "dependencies": {
     "express": "^4.16.4",
     "lodash": "^4.17.11",
+    "nodejs-websocket": "^1.7.2",
     "socket.io": "^2.2.0"
   }
 }
